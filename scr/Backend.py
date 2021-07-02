@@ -1,4 +1,7 @@
 import rados
+import socket
+import sys
+import subprocess
 
 class HandleServer:
     def __init__(self):
@@ -39,8 +42,7 @@ class HandleServer:
 
     def get_object(self, file):
         ioctx = self.cluster.open_ioctx(self.pool)
-        # TODO Correct the length
-        file_content = ioctx.read(file, length=int(10e12)).decode("utf-8")
+        file_content = ioctx.read(file).decode("utf-8")
         print(file_content)
         ioctx.close()
 
@@ -56,13 +58,51 @@ class HandleServer:
         for key, value in status.items():
             print("{}: {} \n".format(key, value))
 
-server = HandleServer()
-server.handle_request(server.get_object_list)
-# server.handle_request(server.delete_object, 'la_divina_comedia.txt')
-# server.handle_request(server.get_object_list)
-server.handle_request(server.add_object, 'CentoMB.txt')
-server.handle_request(server.get_object_list)
-# server.handle_request(server.get_object, 'CentoMB.txt')
-# server.handle_request(server.get_cluster_state)
+    def exit(self):
+        pass
 
 
+def client_receive(client_socket):
+    return client_socket.recv(4096).decode('utf-8')
+
+def client_send(client_socket, m):
+    client_socket.send(str(sys.getsizeof(m)).encode('utf-8'))
+    client_socket.send(m.encode('utf-8'))
+
+def client_connection(client_port):
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.bind(("", client_port))
+        client_socket.listen()
+        print("Server connected")
+    except socket.error as errore:
+        print("Something went wrong: \n{errore}")
+    connection = client_socket.accept()[0]
+    return connection, client_socket
+
+
+if __name__ == '__main__':
+    server = HandleServer()
+    server.handle_request(server.get_object_list)
+    server.handle_request(server.get_object, "hw")
+    port = 12000
+    connection, client_socket = client_connection(port)
+    finished = False
+    while not finished:
+        request = client_receive(connection)
+        if request == "get_object_list":
+            server.handle_request(eval("server." + request))
+        elif request == "get_cluster_state":
+            server.handle_request(eval("server." + request))
+        elif request == "add_object":
+            file = client_receive(connection)
+            server.handle_request(server.add_object, file)
+        elif request == "delete_object":
+            file = client_receive(connection)
+            server.handle_request(server.delete_object, file)
+        elif request == "get_object":
+            file = client_receive(connection)
+            print(request, file)
+            server.handle_request(server.get_object, str(file))
+        elif request == "exit":
+            finished = True
